@@ -35,6 +35,14 @@ The following are recommended configurations; actual requirements should be adju
 
 - **144G x8** GPU: Supports a total KV Cache capacity of up to 3M tokens.
 
+- **192G x2** AMD GPU (MI300X/MI325X): Supports a total KV Cache capacity of ~500K tokens.
+
+- **192G x4** AMD GPU (MI300X/MI325X): Supports a total KV Cache capacity of ~1.5M tokens.
+
+- **288G x2** AMD GPU (MI350X/MI355X): Supports a total KV Cache capacity of ~1.5M tokens.
+
+- **288G x4** AMD GPU (MI350X/MI355X): Supports a total KV Cache capacity of ~4M tokens.
+
 > **Note**: The values above represent the total aggregate hardware KV Cache capacity. The maximum context length per individual sequence remains **196K** tokens.
 
 
@@ -52,6 +60,16 @@ docker run --gpus all \
       --enable-auto-tool-choice \
       --trust-remote-code
 ```
+
+### Installing vLLM for AMD GPU (ROCm)
+
+Install the vLLM ROCm wheel (requires Python 3.12 and ROCm 7.0+):
+
+```bash
+uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
+```
+
+Supported AMD GPUs: MI300X, MI325X, MI350X, MI355X.
 
 ### Installing vLLM from source
 
@@ -83,9 +101,26 @@ uv pip install vllm \
 
 ## Launching  M2.5/M2.1/M2 with vLLM
 
-You can use 4x H200/H20 or 4x A100/A800 GPUs to launch this model.
+### NVIDIA GPU
 
-run tensor-parallel like this:
+You can use 2x B200, 4x H200/H20, or 4x A100/A800 GPUs to launch this model.
+
+For 2x B200: FP8 serving on B200 GPUs with FlashInfer MoE FP8 and DeepGEMM MoE disabled:
+
+```bash
+export VLLM_USE_FLASHINFER_MOE_FP8=0
+export VLLM_MOE_USE_DEEP_GEMM=0
+
+vllm serve MiniMaxAI/MiniMax-M2.5 \
+  --tensor-parallel-size 2 \
+  --gpu-memory-utilization 0.95 \
+  --block-size 32 \
+  --tool-call-parser minimax_m2 \
+  --reasoning-parser minimax_m2_append_think \
+  --enable-auto-tool-choice
+```
+
+For 4x H200/H20 or 4x A100/A800: Standard serving configuration
 
 ```bash
 vllm serve MiniMaxAI/MiniMax-M2.5 \
@@ -139,6 +174,32 @@ vllm serve MiniMaxAI/MiniMax-M2.5 \
   --reasoning-parser minimax_m2 \
   --enable-auto-tool-choice
 ```
+
+### AMD GPU (ROCm)
+
+You can use 2x or 4x MI300X/MI325X/MI350X/MI355X GPUs to launch this model with [AITER](https://github.com/ROCm/aiter) acceleration enabled:
+
+- TP2 (2x MI300X/MI325X/MI350X/MI355X)
+```bash
+VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.5 \
+  --tensor-parallel-size 2 \
+  --tool-call-parser minimax_m2 \
+  --reasoning-parser minimax_m2_append_think \
+  --enable-auto-tool-choice \
+  --trust-remote-code
+```
+
+- TP4 (4x MI300X/MI325X/MI350X/MI355X)
+```bash
+VLLM_ROCM_USE_AITER=1 vllm serve MiniMaxAI/MiniMax-M2.5 \
+  --tensor-parallel-size 4 \
+  --tool-call-parser minimax_m2 \
+  --reasoning-parser minimax_m2_append_think \
+  --enable-auto-tool-choice \
+  --trust-remote-code
+```
+
+> **Note**: The first launch with AITER may take several minutes as AITER JIT-compiles optimized kernels (CK-based FP8 MoE, RMSNorm, activation, etc.). Subsequent launches will use cached kernels.
 
 ## Performance Metrics
 
