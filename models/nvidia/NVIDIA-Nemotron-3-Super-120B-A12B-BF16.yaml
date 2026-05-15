@@ -13,6 +13,7 @@ meta:
     h100: verified
     h200: verified
     b200: verified
+    dgx_station_gb300: verified
 
 model:
   model_id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16"
@@ -132,6 +133,29 @@ guide: |
     --enable-auto-tool-choice \
     --tool-call-parser qwen3_coder \
     --reasoning-parser nemotron_v3
+  ```
+
+  ### DGX Station (GB300) — single-GPU NVFP4 with MTP
+
+  Single Grace-Blackwell Ultra superchip (288 GB HBM3e). The NVFP4 weights
+  fit comfortably on one GPU; pair with FlashInfer-TRTLLM NVFP4 GEMM,
+  Mamba SSM cache in float16, and MTP speculative decoding for throughput:
+
+  ```bash
+  VLLM_NVFP4_GEMM_BACKEND=flashinfer-trtllm \
+  vllm serve nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4 \
+    --served-model-name nemotron120b \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --max-model-len 65536 \
+    --max-num-batched-tokens 16384 \
+    --gpu-memory-utilization 0.9 \
+    --trust-remote-code \
+    --enable-prefix-caching \
+    --mamba-cache-mode all \
+    --mamba-ssm-cache-dtype float16 \
+    --moe-backend flashinfer_trtllm \
+    --speculative-config '{"model":"nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4","method":"mtp","num_speculative_tokens":3}'
   ```
 
   ## Benchmarking

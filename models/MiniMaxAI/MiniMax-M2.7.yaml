@@ -15,6 +15,7 @@ meta:
     mi300x: verified
     mi325x: verified
     mi355x: verified
+    dgx_station_gb300: verified
 
 model:
   model_id: "MiniMaxAI/MiniMax-M2.7"
@@ -173,6 +174,25 @@ guide: |
     --reasoning-parser minimax_m2 \
     --compilation-config '{"mode":3,"pass_config":{"fuse_minimax_qk_norm":true}}' \
     --enable-auto-tool-choice
+  ```
+
+  ### DGX Station (GB300) — single-GPU NVFP4
+
+  Single Grace-Blackwell Ultra superchip (288 GB HBM3e). Use the
+  `nvidia/MiniMax-M2.7-NVFP4` checkpoint with a smaller context window
+  and the latency MoE backend for interactive serving:
+
+  ```bash
+  vllm serve nvidia/MiniMax-M2.7-NVFP4 \
+    --served-model-name minimax \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --max-model-len 65536 \
+    --max-num-batched-tokens 16384 \
+    --gpu-memory-utilization 0.9 \
+    --trust-remote-code \
+    --enable-prefix-caching \
+    --moe-backend latency
   ```
 
   ### AMD ROCm — TP2 or TP4

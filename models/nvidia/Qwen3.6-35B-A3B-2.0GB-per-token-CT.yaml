@@ -1,0 +1,127 @@
+meta:
+  title: "Qwen3.6-35B-A3B-2.0GB-per-token-CT (NVIDIA)"
+  slug: "qwen3.6-35b-a3b-2.0gb-per-token-ct"
+  provider: "NVIDIA"
+  description: "NVIDIA compressed-tensors NVFP4 quantization of Qwen3.6-35B-A3B — fits a single Blackwell GPU at ~2 GB KV cache per 1M tokens with FlashInfer-TRTLLM NVFP4 GEMM"
+  date_updated: 2026-05-14
+  difficulty: intermediate
+  tasks:
+    - text
+  related_recipes:
+    - "Qwen/Qwen3.6-35B-A3B"
+  hardware:
+    b200: verified
+    b300: verified
+    gb300: verified
+    dgx_station_gb300: verified
+
+model:
+  model_id: "nvidia/Qwen3.6-35B-A3B-2.0GB-per-token-CT"
+  min_vllm_version: "0.17.0"
+  architecture: moe
+  parameter_count: "35B"
+  active_parameters: "3B"
+  context_length: 262144
+  base_args:
+    - "--trust-remote-code"
+    - "--dtype"
+    - "auto"
+    - "--quantization=compressed-tensors"
+    - "--kv-cache-dtype"
+    - "fp8"
+    - "--attention-backend"
+    - "flashinfer"
+    - "--enable-chunked-prefill"
+    - "--async-scheduling"
+    - "--enable-flashinfer-autotune"
+    - "--enable-prefix-caching"
+    - "--moe-backend=marlin"
+  base_env:
+    VLLM_NVFP4_GEMM_BACKEND: "flashinfer-trtllm"
+
+features:
+  tool_calling:
+    description: "Enable automatic tool choice with Qwen3 Coder parser"
+    args:
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "qwen3_coder"
+  reasoning:
+    description: "Chain-of-thought reasoning with Qwen3 parser"
+    args:
+      - "--reasoning-parser"
+      - "qwen3"
+  spec_decoding:
+    description: "MTP speculative decoding with Triton MoE backend for the draft path"
+    args:
+      - "--speculative-config"
+      - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+
+opt_in_features:
+  - spec_decoding
+
+variants:
+  default:
+    precision: nvfp4
+    vram_minimum_gb: 21
+    description: "NVIDIA compressed-tensors NVFP4 weights — single Blackwell GPU"
+
+compatible_strategies:
+  - single_node_tp
+  - multi_node_tp
+
+hardware_overrides: {}
+
+strategy_overrides: {}
+
+guide: |
+  ## Overview
+
+  [Qwen3.6-35B-A3B-2.0GB-per-token-CT](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-2.0GB-per-token-CT)
+  is NVIDIA's compressed-tensors NVFP4 quantization of
+  [Qwen/Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B), tuned to
+  hit roughly 2 GB of KV cache per 1M tokens on Blackwell with FP8 KV cache and
+  the FlashInfer-TRTLLM NVFP4 GEMM backend. The 35B MoE (3B active per token) fits
+  on a single B200 / B300 / GB300 / DGX Station GPU.
+
+  ## Prerequisites
+
+  - **Hardware:** 1× B200 / B300 / GB300 NVL4 tray, or DGX Station (GB300, 288 GB)
+  - **vLLM:** >= 0.17.0 with the FlashInfer-TRTLLM NVFP4 GEMM backend available
+  - **Docker:** NVIDIA Container Toolkit recommended
+
+  ## DGX Station (GB300) — single-GPU launch
+
+  This is the reference command for a single GB300 Grace-Blackwell Ultra
+  superchip with 288 GB HBM3e:
+
+  ```bash
+  VLLM_NVFP4_GEMM_BACKEND=flashinfer-trtllm \
+  vllm serve nvidia/Qwen3.6-35B-A3B-2.0GB-per-token-CT \
+    --served-model-name qwen35b \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --max-model-len 40960 \
+    --max-num-seqs 4 --max-num-batched-tokens 40960 \
+    --gpu-memory-utilization 0.85 \
+    --kv-cache-dtype fp8 --attention-backend flashinfer \
+    --dtype auto --trust-remote-code \
+    --enable-chunked-prefill --async-scheduling \
+    --enable-flashinfer-autotune \
+    --moe-backend=marlin --quantization=compressed-tensors \
+    --enable-prefix-caching \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+  ```
+
+  Key flags:
+
+  - `--quantization=compressed-tensors` matches the checkpoint format
+  - `--moe-backend=marlin` runs the quantized experts on Marlin kernels
+  - `VLLM_NVFP4_GEMM_BACKEND=flashinfer-trtllm` selects the TRTLLM NVFP4 GEMM
+  - `--kv-cache-dtype fp8` keeps KV cache near 2 GB/1M-token
+  - MTP `moe_backend: triton` keeps the draft path off Marlin
+
+  ## References
+
+  - [Model card](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-2.0GB-per-token-CT)
+  - [Parent Qwen3.6-35B-A3B recipe](../Qwen/Qwen3.6-35B-A3B)
