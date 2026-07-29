@@ -13,6 +13,7 @@ meta:
   hardware:
     h200: verified
     b200: verified
+    b300: verified
     mi300x: verified
     mi355x: verified
 
@@ -66,6 +67,7 @@ features:
           - "--attention_config.use_trtllm_attention"
           - "true"
       amd:
+        # On ROCm the Eagle3 draft head prefers the TRITON_ATTN attn backend as it has better performance than the default.
         args:
           - "--speculative-config"
           - '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "TRITON_ATTN"}'
@@ -119,6 +121,10 @@ variants:
     # comfortably, ~4 GPUs for weights alone on Blackwell (B200/B300) or AMD MI350X/MI355X (gfx950)).
     vram_minimum_gb: 513
     description: "NVIDIA-quantized MXFP8 weights — Blackwell (B200/B300) for native MX tensor cores, and AMD CDNA4 (MI350X/MI355X, gfx950) for native MXFP8 Matrix Cores."
+    extra_args:
+      - "--trust-remote-code"
+    extra_env:
+      VLLM_FLOAT32_MATMUL_PRECISION: "high"
     hardware_overrides:
       h100:
         # 8x H100 80GB (640 GB node) fits the ~513 GB MXFP8 weights but not the
@@ -605,8 +611,12 @@ guide: |
   ```
 
   Pair it with EAGLE3 speculative decoding (the *Spec decoding* feature) for
-  faster decode — the validated B200 benchmark runs the NVFP4 target against the
-  `Inferact/MiniMax-M3-EAGLE3` draft head (3 speculative tokens):
+  faster decode. On Blackwell the validated benchmark runs the NVFP4 target
+  against the **GQA** draft head `Inferact/MiniMax-M3-EAGLE3-GQA` (3 speculative
+  tokens) with FlashInfer + TRT-LLM attention on the target model — this is what
+  the *Spec decoding* feature emits for B200/B300/GB200/GB300. Non-Blackwell
+  NVIDIA keeps the standard `Inferact/MiniMax-M3-EAGLE3` head, and AMD uses that
+  head with the `TRITON_ATTN` backend:
 
   ```bash
   VLLM_FLOAT32_MATMUL_PRECISION=high \
@@ -615,8 +625,39 @@ guide: |
     --trust-remote-code \
     --block-size 128 \
     --language-model-only \
-    --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
+    --attention_config.backend FLASHINFER \
+    --attention_config.use_trtllm_attention true \
+    --speculative-config '{"method": "eagle3", "model": "Inferact/MiniMax-M3-EAGLE3-GQA", "num_speculative_tokens": 3, "attention_backend": "FLASH_ATTN"}'
   ```
+
+  ### NVFP4 agentic benchmark reproduction (InferenceX B300 sweep)
+
+  The command above is the default spec-decoding serving configuration. The
+  [SemiAnalysis InferenceX](https://inferencex.semianalysis.com/) B300 lane for
+  this checkpoint is a separate **agentic-coding benchmark** configuration — not
+  the recipe default. To reproduce that sweep, start from the command above and
+  apply these deltas:
+
+  - Add `--all2all-backend flashinfer_nvlink_one_sided` (the benchmarked MoE
+    all-to-all path on NVLink Blackwell nodes).
+  - Add `--enable-prefix-caching` — the agentic replay is multi-turn, so prefix
+    reuse across turns is part of the measured configuration.
+  - Serve the thinking mode the acceptance-length reference was measured in:
+    `--default-chat-template-kwargs '{"thinking_mode":"enabled"}'`.
+  - Add `--no-enable-flashinfer-autotune` so kernel autotuning does not perturb
+    the measured latency distribution.
+  - Export `VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm` before launch.
+
+  ```bash
+  # Kernel/collective selection — required to match the benchmarked path.
+  export VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm
+  ```
+
+  Note that the InferenceX lane additionally injects a fixed acceptance length
+  via vLLM's synthetic rejection sampler so that speculative-decoding throughput
+  is compared on equal acceptance across submissions. That is a benchmark
+  fairness control, not a serving recommendation — do not set it in production,
+  and expect real-world acceptance (and therefore speedup) to differ.
 
   ## Quantized Variant (MXFP4 on MI355X)
 
